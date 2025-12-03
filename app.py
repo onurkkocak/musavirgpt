@@ -6,7 +6,12 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
 # DİKKAT: Kendi çalışan anahtarını yapıştır!
-GOOGLE_API_KEY = "AIzaSyCYnMvff-MU52A73njAlyjg7giz4QpsJjw" 
+# Anahtarı kodun içine yazmıyoruz, Streamlit Secrets'tan çekiyoruz
+if "GOOGLE_API_KEY" in st.secrets:
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+else:
+    st.error("API Anahtarı bulunamadı! Lütfen Streamlit Secrets ayarlarını yapın.")
+    st.stop()
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
 # --- SİSTEM TALİMATI (GÜNCELLENDİ: ÇAPRAZ KONTROL & BAĞLANTI KURMA) ---
