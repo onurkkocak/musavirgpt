@@ -5,11 +5,11 @@ import re
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
-# DİKKAT: Buraya kendi çalışan anahtarını yapıştır!
+# DİKKAT: Kendi çalışan anahtarını yapıştır!
 GOOGLE_API_KEY = "AIzaSyCYnMvff-MU52A73njAlyjg7giz4QpsJjw" 
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
-# --- SİSTEM TALİMATI ---
+# --- SİSTEM TALİMATI (GÜNCELLENDİ: ÇAPRAZ KONTROL & BAĞLANTI KURMA) ---
 SYSTEM_INSTRUCTION = """
 Sen Türkiye vergi mevzuatına hakim, kıdemli bir Mali Müşavir Asistanısın. 
 Görevin: Sana verilen kaynakları kullanarak kullanıcıyla SOHBET ETMEK ve sorularını yanıtlamaktır.
@@ -21,6 +21,10 @@ KURALLAR:
 4. **Listeyi Gizle:** Cevabın sonuna "Kaynaklar" diye bir liste ekleme.
 5. **Dürüst Ol:** Kaynaklarda bilgi yoksa "Bu detay sağlanan metinlerde yer almıyor" de.
 6. **İLTİFAT:** İnsani tepkilere kibarca, profesyonelce karşılık ver.
+
+7. **[KRİTİK] ÇAPRAZ KONTROL (Süre Uzatımları):** Kullanıcı bir vergi türünün (Örn: Asgari Kurumlar, KDV vb.) beyanname süresini veya uzamasını sorduğunda; cevap o verginin kendi kanununda yazmayabilir.
+   * MUTLAKA context içindeki **'VUK Sirküleri'**, **'Süre Uzatımı'** veya **'Genelge'** başlıklı diğer belgeleri kontrol et.
+   * Eğer "VUK Sirküleri No: X" belgesinde genel bir uzatma varsa ve bu, sorulan vergiyi de kapsıyorsa, bağlantıyı kur ve "Evet, ... nolu Sirküler ile uzamıştır" de.
 """
 
 st.set_page_config(page_title="MüşavirGPT", page_icon="⚖️", layout="centered")
@@ -53,7 +57,7 @@ st.markdown("""
 
 def kurulum_yap():
     if "AIza" not in GOOGLE_API_KEY or GOOGLE_API_KEY == "AIza..." or len(GOOGLE_API_KEY) < 10:
-        st.error("⚠️ API Key eksik veya hatalı! Lütfen app.py dosyasını kontrol edin.")
+        st.error("⚠️ API Key eksik veya hatalı!")
         st.stop()
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
@@ -64,15 +68,13 @@ def kurulum_yap():
 
 def veri_yukle():
     try:
-        with open("musavirgpt_veri_seti.json", "r", encoding="utf-8") as f: 
-            data = json.load(f)
-            return data
-    except FileNotFoundError: 
-        st.error("❌ Veritabanı dosyası (musavirgpt_veri_seti.json) bulunamadı! Lütfen dosyayı yüklediğinizden emin olun.")
-        st.stop()
+        with open("musavirgpt_veri_seti.json", "r", encoding="utf-8") as f: return json.load(f)
+    except: st.error("Veri seti bulunamadı."); st.stop()
 
-def en_alakali_metinleri_getir(soru, veriler, limit=20):
-    # Basit kelime bazlı arama
+def en_alakali_metinleri_getir(soru, veriler, limit=50):
+    # DİKKAT: Limit 50'ye çıkarıldı. 
+    # Gemini'nin kapasitesi yüksek, daha fazla belge gönderelim ki "Sirküleri" gözden kaçırmasın.
+    
     soru_kelimeleri = set(re.findall(r'\b\w+\b', soru.lower()))
     skorlu = []
     
@@ -80,11 +82,15 @@ def en_alakali_metinleri_getir(soru, veriler, limit=20):
         metin = (str(v.get('baslik', '')) + " " + str(v.get('icerik', ''))).lower()
         metin_kelimeleri = set(re.findall(r'\b\w+\b', metin))
         
-        # Kesişim sayısı (Kaç kelime tuttu?)
+        # Basit kesişim puanı
         skor = len(soru_kelimeleri.intersection(metin_kelimeleri))
         
-        # DÜZELTME BURADA: Eşik değerini 3'ten 1'e indirdim.
-        # Artık 1 kelime bile tutsa Gemini'ye gönderiyoruz, o en iyisini seçsin.
+        # BONUS PUAN: Eğer belgenin içinde "Sirküler", "Uzatma", "Erteleme" geçiyorsa
+        # ve kullanıcı da "uzadı mı", "ne zaman" diye soruyorsa, bu belgenin puanını artır.
+        if ("uzadı" in soru.lower() or "süre" in soru.lower()) and \
+           ("sirküler" in metin or "uzat" in metin or "ertel" in metin):
+            skor += 2  # Bu belgeleri yukarı taşı
+        
         if skor >= 1: 
             skorlu.append((skor, v))
             
@@ -114,11 +120,8 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
         bilgi_kutusu = st.empty()
         bilgi_kutusu.markdown('<p class="loading-text">MüşavirGPT Yazıyor</p>', unsafe_allow_html=True)
         
-        # Veri Getir
+        # Daha fazla belge getiriyoruz (Limit=50)
         alakali_kayitlar = en_alakali_metinleri_getir(prompt, veriler)
-        
-        # Eğer hiç veri yoksa (0 eşleşme), bunu da kullanıcıya söylemesin,
-        # Gemini genel kültürüyle veya "bilgi yok" mesajıyla yönetsin.
         
         context_text = ""
         for i, v in enumerate(alakali_kayitlar):
@@ -128,9 +131,9 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
             context_text += f"\n--- KAYNAK {i+1} ---\nBaşlık: {temiz_baslik}\nTür: {suni_kanun_adi}\nİçerik: {v.get('icerik')}\n"
         
         full_prompt = (
-            f"KAYNAKLAR (Eğer soru teknikse bunları kullan):\n{context_text}\n\n"
+            f"KAYNAKLAR (Dikkat: Cevap, sorulan konu başlığında değil, 'Sirküler' veya 'Uzatma' belgelerinde gizli olabilir):\n{context_text}\n\n"
             f"KULLANICI MESAJI: {prompt}\n\n"
-            f"Lütfen 'Müşavir Asistanı' kimliğinle cevapla."
+            f"Lütfen 'Müşavir Asistanı' kimliğinle, bağlantıları kurarak cevapla."
         )
         
         try:
