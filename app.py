@@ -5,7 +5,8 @@ import re
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
-GOOGLE_API_KEY = "AIzaSyCYnMvff-MU52A73njAlyjg7giz4QpsJjw" # <-- ANAHTARINI BURAYA YAPIŞTIR!
+# DİKKAT: Buraya kendi çalışan anahtarını yapıştır!
+GOOGLE_API_KEY = "AIzaSyCYnMvff-MU52A73njAlyjg7giz4QpsJjw" 
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
 # --- SİSTEM TALİMATI ---
@@ -24,30 +25,69 @@ KURALLAR:
 
 st.set_page_config(page_title="MüşavirGPT", page_icon="⚖️", layout="centered")
 
+# --- CSS ANİMASYONU ---
+st.markdown("""
+<style>
+@keyframes dot-keyframes {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+  100% { content: ''; }
+}
+.loading-text::after {
+  content: '.';
+  animation: dot-keyframes 1.5s infinite step-start;
+  display: inline-block;
+  width: 1.5em;
+  text-align: left;
+}
+.loading-text {
+    font-size: 1.1em;
+    color: #666;
+    font-weight: 500;
+    font-style: italic;
+    margin-top: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 def kurulum_yap():
-    if "AIza" not in GOOGLE_API_KEY or GOOGLE_API_KEY == "AIza...":
-        st.error("⚠️ API Key eksik! Lütfen app.py dosyasını düzenleyin.")
+    if "AIza" not in GOOGLE_API_KEY or GOOGLE_API_KEY == "AIza..." or len(GOOGLE_API_KEY) < 10:
+        st.error("⚠️ API Key eksik veya hatalı! Lütfen app.py dosyasını kontrol edin.")
         st.stop()
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
         return genai.GenerativeModel(ACTIVE_MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
     except Exception as e:
-        st.error(f"Hata: {e}")
+        st.error(f"Bağlantı Hatası: {e}")
         st.stop()
 
 def veri_yukle():
     try:
-        with open("musavirgpt_veri_seti.json", "r", encoding="utf-8") as f: return json.load(f)
-    except: st.error("Veri seti bulunamadı."); st.stop()
+        with open("musavirgpt_veri_seti.json", "r", encoding="utf-8") as f: 
+            data = json.load(f)
+            return data
+    except FileNotFoundError: 
+        st.error("❌ Veritabanı dosyası (musavirgpt_veri_seti.json) bulunamadı! Lütfen dosyayı yüklediğinizden emin olun.")
+        st.stop()
 
-def en_alakali_metinleri_getir(soru, veriler, limit=15):
+def en_alakali_metinleri_getir(soru, veriler, limit=20):
+    # Basit kelime bazlı arama
     soru_kelimeleri = set(re.findall(r'\b\w+\b', soru.lower()))
     skorlu = []
+    
     for v in veriler:
         metin = (str(v.get('baslik', '')) + " " + str(v.get('icerik', ''))).lower()
         metin_kelimeleri = set(re.findall(r'\b\w+\b', metin))
+        
+        # Kesişim sayısı (Kaç kelime tuttu?)
         skor = len(soru_kelimeleri.intersection(metin_kelimeleri))
-        if skor >= 3: skorlu.append((skor, v))
+        
+        # DÜZELTME BURADA: Eşik değerini 3'ten 1'e indirdim.
+        # Artık 1 kelime bile tutsa Gemini'ye gönderiyoruz, o en iyisini seçsin.
+        if skor >= 1: 
+            skorlu.append((skor, v))
+            
     skorlu.sort(key=lambda x: x[0], reverse=True)
     return [x[1] for x in skorlu[:limit]]
 
@@ -71,31 +111,33 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # MOBİL İÇİN GÜVENLİ YÖNTEM:
-        # CSS animasyonu yerine Streamlit'in kendi spinner'ını kullanıyoruz.
-        # Bu yöntem %100 her cihazda çalışır.
-        with st.spinner("MüşavirGPT yazıyor..."):
-            
-            alakali_kayitlar = en_alakali_metinleri_getir(prompt, veriler)
-            
-            context_text = ""
-            for i, v in enumerate(alakali_kayitlar):
-                raw_baslik = v.get('baslik', '')
-                temiz_baslik = re.sub(r'\s*\((Parça|Bölüm)\s*\d+\)', '', raw_baslik).strip()
-                suni_kanun_adi = "Resmi Mevzuat Belgesi"
-                context_text += f"\n--- KAYNAK {i+1} ---\nBaşlık: {temiz_baslik}\nTür: {suni_kanun_adi}\nİçerik: {v.get('icerik')}\n"
-            
-            full_prompt = (
-                f"KAYNAKLAR (Eğer soru teknikse kullan, yoksa dikkate alma):\n{context_text}\n\n"
-                f"KULLANICI MESAJI: {prompt}\n\n"
-                f"Lütfen 'Müşavir Asistanı' kimliğinle cevapla."
-            )
-            
-            try:
-                resp = st.session_state.chat_session.send_message(full_prompt)
-                cevap = resp.text 
-            except Exception as e: cevap = f"Hata: {e}"
+        bilgi_kutusu = st.empty()
+        bilgi_kutusu.markdown('<p class="loading-text">MüşavirGPT Yazıyor</p>', unsafe_allow_html=True)
+        
+        # Veri Getir
+        alakali_kayitlar = en_alakali_metinleri_getir(prompt, veriler)
+        
+        # Eğer hiç veri yoksa (0 eşleşme), bunu da kullanıcıya söylemesin,
+        # Gemini genel kültürüyle veya "bilgi yok" mesajıyla yönetsin.
+        
+        context_text = ""
+        for i, v in enumerate(alakali_kayitlar):
+            raw_baslik = v.get('baslik', '')
+            temiz_baslik = re.sub(r'\s*\((Parça|Bölüm)\s*\d+\)', '', raw_baslik).strip()
+            suni_kanun_adi = "Resmi Mevzuat Belgesi"
+            context_text += f"\n--- KAYNAK {i+1} ---\nBaşlık: {temiz_baslik}\nTür: {suni_kanun_adi}\nİçerik: {v.get('icerik')}\n"
+        
+        full_prompt = (
+            f"KAYNAKLAR (Eğer soru teknikse bunları kullan):\n{context_text}\n\n"
+            f"KULLANICI MESAJI: {prompt}\n\n"
+            f"Lütfen 'Müşavir Asistanı' kimliğinle cevapla."
+        )
+        
+        try:
+            resp = st.session_state.chat_session.send_message(full_prompt)
+            cevap = resp.text 
+        except Exception as e: cevap = f"Bir hata oluştu: {e}"
 
+        bilgi_kutusu.empty()
         st.markdown(cevap)
-
         st.session_state.messages.append({"role": "assistant", "content": cevap})
