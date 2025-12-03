@@ -5,7 +5,7 @@ import re
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
-GOOGLE_API_KEY = "AIzaSyBAZj52dZxz6qQOpu9Ds3EJm5FlErWeL3A" # <-- ANAHTARINI BURAYA YAPIŞTIR!
+GOOGLE_API_KEY = "AIza..." # <-- ANAHTARINI BURAYA YAPIŞTIR!
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
 # --- SİSTEM TALİMATI ---
@@ -23,31 +23,6 @@ KURALLAR:
 """
 
 st.set_page_config(page_title="MüşavirGPT", page_icon="⚖️", layout="centered")
-
-# --- CSS ANİMASYONU (NOKTA NOKTA BELİRME EFEKTİ) ---
-st.markdown("""
-<style>
-@keyframes dot-keyframes {
-  0% { content: '.'; }
-  33% { content: '..'; }
-  66% { content: '...'; }
-  100% { content: ''; }
-}
-.loading-text::after {
-  content: '.';
-  animation: dot-keyframes 1.5s infinite step-start;
-  display: inline-block;
-  width: 1.5em;
-  text-align: left;
-}
-.loading-text {
-    font-size: 1.1em;
-    color: #555;
-    font-weight: 500;
-    font-style: italic;
-}
-</style>
-""", unsafe_allow_html=True)
 
 def kurulum_yap():
     if "AIza" not in GOOGLE_API_KEY or GOOGLE_API_KEY == "AIza...":
@@ -96,33 +71,30 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # 1. Spinner Yerine Özel Animasyonlu Alan Oluşturuyoruz
-        bilgi_kutusu = st.empty()
-        bilgi_kutusu.markdown('<p class="loading-text">Yazıyor</p>', unsafe_allow_html=True)
-        
-        # İşlemler Başlıyor
-        alakali_kayitlar = en_alakali_metinleri_getir(prompt, veriler)
-        
-        context_text = ""
-        for i, v in enumerate(alakali_kayitlar):
-            raw_baslik = v.get('baslik', '')
-            temiz_baslik = re.sub(r'\s*\((Parça|Bölüm)\s*\d+\)', '', raw_baslik).strip()
-            suni_kanun_adi = "Resmi Mevzuat Belgesi"
-            context_text += f"\n--- KAYNAK {i+1} ---\nBaşlık: {temiz_baslik}\nTür: {suni_kanun_adi}\nİçerik: {v.get('icerik')}\n"
-        
-        full_prompt = (
-            f"KAYNAKLAR (Eğer soru teknikse kullan, yoksa dikkate alma):\n{context_text}\n\n"
-            f"KULLANICI MESAJI: {prompt}\n\n"
-            f"Lütfen 'Müşavir Asistanı' kimliğinle cevapla."
-        )
-        
-        try:
-            resp = st.session_state.chat_session.send_message(full_prompt)
-            cevap = resp.text 
-        except Exception as e: cevap = f"Hata: {e}"
-
-        # 2. İşlem Bitince Animasyonlu Yazıyı Siliyoruz
-        bilgi_kutusu.empty()
+        # MOBİL İÇİN GÜVENLİ YÖNTEM:
+        # CSS animasyonu yerine Streamlit'in kendi spinner'ını kullanıyoruz.
+        # Bu yöntem %100 her cihazda çalışır.
+        with st.spinner("MüşavirGPT yazıyor..."):
+            
+            alakali_kayitlar = en_alakali_metinleri_getir(prompt, veriler)
+            
+            context_text = ""
+            for i, v in enumerate(alakali_kayitlar):
+                raw_baslik = v.get('baslik', '')
+                temiz_baslik = re.sub(r'\s*\((Parça|Bölüm)\s*\d+\)', '', raw_baslik).strip()
+                suni_kanun_adi = "Resmi Mevzuat Belgesi"
+                context_text += f"\n--- KAYNAK {i+1} ---\nBaşlık: {temiz_baslik}\nTür: {suni_kanun_adi}\nİçerik: {v.get('icerik')}\n"
+            
+            full_prompt = (
+                f"KAYNAKLAR (Eğer soru teknikse kullan, yoksa dikkate alma):\n{context_text}\n\n"
+                f"KULLANICI MESAJI: {prompt}\n\n"
+                f"Lütfen 'Müşavir Asistanı' kimliğinle cevapla."
+            )
+            
+            try:
+                resp = st.session_state.chat_session.send_message(full_prompt)
+                cevap = resp.text 
+            except Exception as e: cevap = f"Hata: {e}"
 
         st.markdown(cevap)
         st.session_state.messages.append({"role": "assistant", "content": cevap})
