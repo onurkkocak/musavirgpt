@@ -5,7 +5,7 @@ import re
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
-GOOGLE_API_KEY = "AIzaSyBAZj52dZxz6qQOpu9Ds3EJm5FlErWeL3A" # <-- ANAHTARINI BURAYA YAPIŞTIR!
+GOOGLE_API_KEY = "AIzaSyCYnMvff-MU52A73njAlyjg7giz4QpsJjw" # <-- ANAHTARINI BURAYA YAPIŞTIR!
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
 # --- SİSTEM TALİMATI ---
@@ -97,4 +97,5 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
             except Exception as e: cevap = f"Hata: {e}"
 
         st.markdown(cevap)
+
         st.session_state.messages.append({"role": "assistant", "content": cevap})
