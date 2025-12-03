@@ -5,7 +5,7 @@ import re
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- AYARLAR ---
-GOOGLE_API_KEY = "AIza..." # <-- ANAHTARINI BURAYA YAPIŞTIR!
+GOOGLE_API_KEY = "AIzaSyBAZj52dZxz6qQOpu9Ds3EJm5FlErWeL3A" # <-- ANAHTARINI BURAYA YAPIŞTIR!
 ACTIVE_MODEL_NAME = 'gemini-2.5-flash'
 
 # --- SİSTEM TALİMATI ---
