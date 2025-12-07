@@ -11,6 +11,7 @@ import string
 import requests 
 import io 
 import pdfplumber 
+import base64 # Base64 çözme için eklendi
 
 # Firebase
 import firebase_admin
@@ -49,20 +50,33 @@ def db_baglan():
     try:
         if not firebase_admin._apps:
             if os.path.exists(FIREBASE_KEY_PATH):
-                # Bu kısım sadece yerel test için. Cloud'da çalışmaz.
+                # Local test için
                 cred = credentials.Certificate(FIREBASE_KEY_PATH)
                 firebase_admin.initialize_app(cred)
-            elif "firestore" in st.secrets:
-                # Cloud ortamında çalışan kısım (secrets.toml)
-                key_dict = json.loads(st.secrets["firestore"]["text_key"])
-                cred = credentials.Certificate(key_dict)
-                firebase_admin.initialize_app(cred)
+            elif "firestore" in st.secrets and "base64_key" in st.secrets["firestore"]:
+                # Cloud ortamı için Base64 çözümü
+                try:
+                    # 1. Base64 dizesini çek
+                    base64_encoded_key = st.secrets["firestore"]["base64_key"]
+                    
+                    # 2. Base64'ten JSON metnine çöz
+                    json_bytes = base64.b64decode(base64_encoded_key)
+                    json_string = json_bytes.decode('utf-8')
+                    
+                    # 3. JSON metnini sözlüğe çevir ve Firebase'i başlat
+                    key_dict = json.loads(json_string)
+                    cred = credentials.Certificate(key_dict)
+                    firebase_admin.initialize_app(cred)
+                except Exception as e:
+                    # JSON, Base64 veya Firebase başlatma hatası varsa
+                    print(f"KRİTİK BASE64/JSON HATA: {e}")
+                    return None
             else:
                 # Anahtar bulunamadı
                 return None
         return firestore.client()
     except Exception as e:
-        print(f"DB Hatası: {e}")
+        print(f"DB Başlatma Hatası: {e}")
         return None
 
 db = db_baglan()
