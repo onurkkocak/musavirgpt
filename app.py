@@ -49,14 +49,16 @@ def db_baglan():
     try:
         if not firebase_admin._apps:
             if os.path.exists(FIREBASE_KEY_PATH):
+                # Bu kısım sadece yerel test için. Cloud'da çalışmaz.
                 cred = credentials.Certificate(FIREBASE_KEY_PATH)
                 firebase_admin.initialize_app(cred)
             elif "firestore" in st.secrets:
-                # secrets.toml dosyasından anahtarı okur
+                # Cloud ortamında çalışan kısım (secrets.toml)
                 key_dict = json.loads(st.secrets["firestore"]["text_key"])
                 cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
             else:
+                # Anahtar bulunamadı
                 return None
         return firestore.client()
     except Exception as e:
@@ -67,9 +69,11 @@ db = db_baglan()
 
 def db_kontrol():
     if not db:
-        st.error(f"❌ Veritabanı anahtarı ({FIREBASE_KEY_PATH}) bulunamadı.")
+        # Hata mesajı güncellendi: Kullanıcıyı secrets.toml'a yönlendirir.
+        st.error(f"❌ Veritabanı bağlantısı kurulamadı. Lütfen 'secrets.toml' dosyanızdaki Firebase anahtarını kontrol edin.")
         return False
     try:
+        # DB bağlantısını basit bir okuma ile test et
         db.collection('test').limit(1).get()
         return True
     except PermissionDenied:
@@ -80,7 +84,40 @@ def db_kontrol():
         return False
 
 # --- 2. VERİ OKUMA VE YAZMA OPERASYONLARI ---
-# Sadece gerekli DB fonksiyonlarını tutuyoruz.
+def oneri_ekle(bilgi, kaynak="Kullanıcı"):
+    if not db: return False
+    try:
+        docs = db.collection('bilgiler').where('bilgi', '==', bilgi).stream()
+        for doc in docs: return False 
+        veri = {
+            "id": str(uuid.uuid4()), "bilgi": bilgi, "kaynak": kaynak,
+            "tarih": datetime.now().strftime("%Y-%m-%d %H:%M"), "durum": "beklemede"
+        }
+        db.collection('bilgiler').document(veri['id']).set(veri)
+        return True
+    except: return False
+
+def onayli_bilgileri_getir():
+    if not db: return []
+    try:
+        docs = db.collection('bilgiler').where('durum', '==', 'onaylı').stream()
+        return [doc.to_dict()['bilgi'] for doc in docs]
+    except: return []
+
+def bekleyen_onerileri_getir():
+    if not db: return []
+    try:
+        docs = db.collection('bilgiler').where('durum', '==', 'beklemede').stream()
+        return [doc.to_dict() for doc in docs]
+    except: return []
+
+def durum_guncelle(koleksiyon, doc_id, yeni_durum):
+    if not db: return
+    try:
+        doc_ref = db.collection(koleksiyon).document(doc_id)
+        if yeni_durum == 'sil': doc_ref.delete()
+        else: doc_ref.update({"durum": yeni_durum})
+    except: pass
 
 def log_ekle(islem, mesaj):
     if not db: return
@@ -104,8 +141,6 @@ def sirkulerleri_getir():
     """Tüm sirkülerleri Firebase'den çeker ve önbelleğe alır."""
     if not db: return []
     try:
-        # DB'deki tüm sirkülerleri çekme. 1024 kayıt olduğu için bu biraz sürebilir,
-        # bu yüzden @st.cache_data ile önbelleğe alıyoruz.
         docs = db.collection('sirkulerler').stream()
         return [doc.to_dict() for doc in docs]
     except Exception as e:
@@ -141,6 +176,7 @@ def configure_gemini():
     return False
 
 def get_working_models():
+    """SİZİN HESABINIZDAKİ AKTİF MODELLERE GÖRE AYARLANDI."""
     priority_models = [
         'models/gemini-2.5-flash',
         'models/gemini-2.0-flash',
@@ -158,7 +194,6 @@ def debug_available_models():
         return [f"Model listesi alınamadı: {e}"]
 
 def generate_with_fallback(prompt_parts):
-    """Sadece metin üretme (Chat) için fallback mekanizması."""
     model_list = get_working_models()
     last_error = None
     
@@ -188,6 +223,23 @@ def generate_with_fallback(prompt_parts):
     
     return f"⚠️ Servis şu an yanıt veremiyor.\n\nTeknik Detay: Kullandığınız API Anahtarı mevcut modellerimizle uyuşmuyor olabilir.\nErişilebilir Modeller: {available}\nSon Hata: {last_error}"
 
+def pdf_sayfasini_gorsel_oku(image_bytes):
+    # Bu fonksiyon chat odaklı modda devre dışıdır.
+    prompt = "PDF'in görselini analiz et."
+    return generate_with_fallback(prompt)
+
+
+# --- YÖNETİCİ MODU FONKSİYONLARI (Pasif/Placeholder) ---
+def vision_ile_tara_ve_yukle_yerel(pdf_klasoru):
+    st.error("Bu fonksiyon Cloud ortamında devre dışıdır (Yerel disk okuması gerektirir).")
+    return False, 0 
+
+def otopilot_tum_arsiv():
+    st.error("Bu fonksiyon Cloud ortamında devre dışıdır (Web taraması gerektirir).")
+    return False, 0
+
+
+# --- 5. CEVAPLAMA MOTORU ---
 def get_gemini_response(question, context, chat_history):
     formatted = ""
     for msg in chat_history[-5:]:
@@ -205,33 +257,6 @@ def get_gemini_response(question, context, chat_history):
     """
     
     return generate_with_fallback(prompt)
-
-
-# --- YÖNETİCİ MODU FONKSİYONLARI (CHAT ODAKLI SÜRÜMDE KULLANILMAYANLAR) ---
-
-def vision_ile_tara_ve_yukle_yerel(pdf_klasoru):
-    # Bu fonksiyon, diskteki dosyaları Firebase'e yüklemek için kullanılır.
-    # Kullanıcı artık veriyi yüklediği için bu fonksiyon, Yönetici panelinde kalır.
-    if not db_kontrol(): return False, "DB Yok"
-    pdf_dosyalari = glob.glob(os.path.join(pdf_klasoru, "*.pdf"))
-    
-    if not pdf_dosyalari: 
-        return False, 0
-
-    progress = st.sidebar.progress(0)
-    status = st.sidebar.empty()
-    count = 0
-
-    # Bu kısmı işlevsel tutuyorum ki kullanıcı tekrar yüklemek isterse kullanabilsin.
-    # [İŞLEVSEL KOD BURADA]...
-    # (Daha önce gönderdiğimiz tam Vision kodu buraya yerleşir)
-    return True, count # Basit dönüş
-
-
-def otopilot_tum_arsiv():
-    # Webden tarama yapan bu fonksiyon da artık arka planda kalmalı.
-    return True, 0 
-
 
 # --- ARAYÜZ (MAIN) ---
 def main():
@@ -253,20 +278,15 @@ def main():
             # YÖNETİCİ OPERASYONLARI
             st.markdown("### Operasyonlar")
             
-            # 1. YEREL YÜKLEME BUTONU
+            # 1. YEREL YÜKLEME BUTONU (Pasif)
             if st.button(f"1. İndirilen Klasörünü İşle (Vision)"):
-                 with st.spinner("Yerel PDF'ler Vision ile işleniyor..."):
-                    st.cache_data.clear() 
-                    # Burada tam yükleme fonksiyonu çağrılır
+                 with st.spinner("İşleniyor..."):
                     ok, n = vision_ile_tara_ve_yukle_yerel(DEFAULT_PDF_KLASORU)
-                    if ok:
-                        st.success(f"İşlem tamamlandı. {n} belge Firebase'e yüklendi ve diskten silindi.")
-                    else:
-                        st.error(f"Yerel işleme hatayla sonlandı. İşlenen: {n}")
             
-            # 2. WEB TARAMA BUTONU (Artık gereksiz, sadece placeholder)
+            # 2. WEB TARAMA BUTONU (Pasif)
             if st.button(f"2. Web Tarama (PDFplumber)"):
-                st.info("Bu fonksiyon, tüm veriler yüklendiği için artık aktif değildir.")
+                with st.spinner("İşleniyor..."):
+                    ok, n = otopilot_tum_arsiv()
             
             # 3. TEMİZLEME BUTONU
             if st.button("3. Firebase'i Temizle (DİKKAT!)"):
