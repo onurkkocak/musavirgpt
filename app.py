@@ -36,13 +36,10 @@ ADMIN_SIFRESI = "admin123"
 FIREBASE_KEY_PATH = "firestore_key.json"
 DEFAULT_PDF_KLASORU = "indirilen_pdfler" 
 
-# TÜRMOB SCRAPER AYARLARI
-BASE_URL = "https://www.turmob.org.tr"
-START_URL = "https://www.turmob.org.tr/ekutuphane/e2f9f8fd-af81-456b-8626-2e938f66dd45/mevzuat-sirkuleri/1"
-TARANACAK_YIL_ADEDI = 10 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-}
+# YENİ KAYNAK İÇİN YER TUTUCULAR
+YENI_KAYNAK_ADI = "Yeni Kaynak"
+YENI_KAYNAK_URL = "http://yeni.kaynaginiz.com"
+
 
 # --- 1. FIREBASE BAĞLANTISI ---
 @st.cache_resource
@@ -54,7 +51,7 @@ def db_baglan():
                 cred = credentials.Certificate(FIREBASE_KEY_PATH)
                 firebase_admin.initialize_app(cred)
             elif "firestore" in st.secrets and "base64_key" in st.secrets["firestore"]:
-                # Cloud ortamı için Base64 çözümü
+                # Cloud ortamında çalışan kısım (Base64 çözümü)
                 try:
                     # 1. Base64 dizesini çek
                     base64_encoded_key = st.secrets["firestore"]["base64_key"]
@@ -72,7 +69,6 @@ def db_baglan():
                     print(f"KRİTİK BASE64/JSON HATA: {e}")
                     return None
             else:
-                # Anahtar bulunamadı
                 return None
         return firestore.client()
     except Exception as e:
@@ -98,41 +94,6 @@ def db_kontrol():
         return False
 
 # --- 2. VERİ OKUMA VE YAZMA OPERASYONLARI ---
-def oneri_ekle(bilgi, kaynak="Kullanıcı"):
-    if not db: return False
-    try:
-        docs = db.collection('bilgiler').where('bilgi', '==', bilgi).stream()
-        for doc in docs: return False 
-        veri = {
-            "id": str(uuid.uuid4()), "bilgi": bilgi, "kaynak": kaynak,
-            "tarih": datetime.now().strftime("%Y-%m-%d %H:%M"), "durum": "beklemede"
-        }
-        db.collection('bilgiler').document(veri['id']).set(veri)
-        return True
-    except: return False
-
-def onayli_bilgileri_getir():
-    if not db: return []
-    try:
-        docs = db.collection('bilgiler').where('durum', '==', 'onaylı').stream()
-        return [doc.to_dict()['bilgi'] for doc in docs]
-    except: return []
-
-def bekleyen_onerileri_getir():
-    if not db: return []
-    try:
-        docs = db.collection('bilgiler').where('durum', '==', 'beklemede').stream()
-        return [doc.to_dict() for doc in docs]
-    except: return []
-
-def durum_guncelle(koleksiyon, doc_id, yeni_durum):
-    if not db: return
-    try:
-        doc_ref = db.collection(koleksiyon).document(doc_id)
-        if yeni_durum == 'sil': doc_ref.delete()
-        else: doc_ref.update({"durum": yeni_durum})
-    except: pass
-
 def log_ekle(islem, mesaj):
     if not db: return
     try:
@@ -238,19 +199,48 @@ def generate_with_fallback(prompt_parts):
     return f"⚠️ Servis şu an yanıt veremiyor.\n\nTeknik Detay: Kullandığınız API Anahtarı mevcut modellerimizle uyuşmuyor olabilir.\nErişilebilir Modeller: {available}\nSon Hata: {last_error}"
 
 def pdf_sayfasini_gorsel_oku(image_bytes):
-    # Bu fonksiyon chat odaklı modda devre dışıdır.
     prompt = "PDF'in görselini analiz et."
     return generate_with_fallback(prompt)
 
 
-# --- YÖNETİCİ MODU FONKSİYONLARI (Pasif/Placeholder) ---
-def vision_ile_tara_ve_yukle_yerel(pdf_klasoru):
-    st.error("Bu fonksiyon Cloud ortamında devre dışıdır (Yerel disk okuması gerektirir).")
-    return False, 0 
-
-def otopilot_tum_arsiv():
-    st.error("Bu fonksiyon Cloud ortamında devre dışıdır (Web taraması gerektirir).")
-    return False, 0
+# --- YENİ VERİ ÇEKME FONKSİYONU ---
+def yeni_kaynaktan_veri_cek():
+    """
+    Yeni veri kaynağınızdan veri çekecek olan placeholder (yer tutucu) fonksiyon.
+    Bu fonksiyonun içine yeni scraper kodunuzu yazmalısınız.
+    """
+    if not db_kontrol(): 
+        return False, 0
+    
+    log_ekle("SCRAPER", f"{YENI_KAYNAK_ADI} kaynağından veri çekimi başlatıldı...")
+    
+    try:
+        # --- YENİ SCRAPER KODUNUZ BURAYA GELECEK ---
+        # Şimdilik simülasyon yapalım:
+        veri_listesi = [
+            {"baslik": "Yeni Sirküler 1", "icerik": "Gelir Vergisi Kanununa dair yeni düzenlemeler...", "kaynak": YENI_KAYNAK_ADI},
+            {"baslik": "Yeni Sirküler 2", "icerik": "SGK Prim Affı hakkında detaylar.", "kaynak": YENI_KAYNAK_ADI}
+        ]
+        
+        yeni_kayit_sayisi = 0
+        for veri in veri_listesi:
+            # Firebase'e kaydet
+            db.collection('sirkulerler').add({
+                "baslik": veri["baslik"],
+                "icerik": veri["icerik"],
+                "url": YENI_KAYNAK_URL,
+                "kaynak": veri["kaynak"],
+                "tarih": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "okuma_tipi": "yeni_kaynak_api"
+            })
+            yeni_kayit_sayisi += 1
+            
+        log_ekle("SCRAPER", f"{yeni_kayit_sayisi} adet veri Firebase'e yüklendi.")
+        return True, yeni_kayit_sayisi
+    
+    except Exception as e:
+        log_ekle("SCRAPER KRİTİK HATA", str(e))
+        return False, 0
 
 
 # --- 5. CEVAPLAMA MOTORU ---
@@ -292,23 +282,24 @@ def main():
             # YÖNETİCİ OPERASYONLARI
             st.markdown("### Operasyonlar")
             
-            # 1. YEREL YÜKLEME BUTONU (Pasif)
-            if st.button(f"1. İndirilen Klasörünü İşle (Vision)"):
-                 with st.spinner("İşleniyor..."):
-                    ok, n = vision_ile_tara_ve_yukle_yerel(DEFAULT_PDF_KLASORU)
+            # YENİ KAYNAK BUTONU
+            if st.button(f"1. {YENI_KAYNAK_ADI}'ndan Veri Çek"):
+                 with st.spinner("Yeni kaynaktan veri çekiliyor..."):
+                    ok, n = yeni_kaynaktan_veri_cek()
+                    if ok:
+                        st.success(f"İşlem tamamlandı. {n} adet yeni sirküler yüklendi.")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("Veri çekme sırasında kritik bir hata oluştu.")
             
-            # 2. WEB TARAMA BUTONU (Pasif)
-            if st.button(f"2. Web Tarama (PDFplumber)"):
-                with st.spinner("İşleniyor..."):
-                    ok, n = otopilot_tum_arsiv()
-            
-            # 3. TEMİZLEME BUTONU
-            if st.button("3. Firebase'i Temizle (DİKKAT!)"):
+            # 2. TEMİZLEME BUTONU
+            if st.button("2. Firebase'i Temizle (DİKKAT!)"):
                 with st.spinner("Tüm sirkülerler siliniyor..."):
                     count = sirkulerleri_temizle()
                     st.warning(f"Toplam {count} sirküler silindi.")
                     st.cache_data.clear()
-                    st.rerun() # Temizlik sonrası uygulamayı yenile
+                    st.rerun() 
             
             st.divider()
             
