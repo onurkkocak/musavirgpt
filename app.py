@@ -207,7 +207,6 @@ def pdf_sayfasini_gorsel_oku(image_bytes):
 def yeni_kaynaktan_veri_cek():
     """
     Yeni veri kaynağınızdan veri çekecek olan placeholder (yer tutucu) fonksiyon.
-    Bu fonksiyonun içine yeni scraper kodunuzu yazmalısınız.
     """
     if not db_kontrol(): 
         return False, 0
