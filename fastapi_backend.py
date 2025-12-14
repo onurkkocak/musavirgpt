@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import google.generativeai as genai
 from selenium import webdriver
@@ -90,13 +91,14 @@ def get_best_model():
 def extract_content_smart(driver, is_kanun=False):
     """
     Sayfa içeriğini çeker. Özelgeler için akordeonları açar.
+    HTML yapısına (pnlicerik / dvOzelge) göre optimize edilmiştir.
     """
     try:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(2)
         
         main_div = None
-        # İçerik alanı bulma (Verginet & KPMG Genel)
+        # Verginet içerik alanları (Senin HTML'ine göre)
         for xpath in ["//*[contains(@id, 'pnlicerik')]", "//*[contains(@id, 'dvOzelge')]"]:
             try:
                 main_div = driver.find_element(By.XPATH, xpath)
@@ -104,28 +106,20 @@ def extract_content_smart(driver, is_kanun=False):
             except: continue
         
         if not main_div:
-            # KPMG gibi siteler için en büyük metin bloğunu bul
-            try:
-                divs = driver.find_elements(By.TAG_NAME, "div")
-                valid_divs = [d for d in divs if d.is_displayed() and len(d.text) > 200]
-                if valid_divs:
-                    main_div = max(valid_divs, key=lambda d: len(d.text))
-                else:
-                    main_div = driver.find_element(By.TAG_NAME, "body")
-            except:
-                main_div = driver.find_element(By.TAG_NAME, "body")
+            main_div = driver.find_element(By.TAG_NAME, "body")
 
         # Özelge Sayfasıysa Akordeonları Aç (Sadece Verginet)
         if not is_kanun and "verginet" in driver.current_url:
+            # Senin HTML'inde accordion div'i var, içindeki başlıkları bulup tıklıyoruz
             clickables = main_div.find_elements(By.CSS_SELECTOR, ".panel-heading, .panel-title, h4, h3, a[data-toggle='collapse']")
             for i, elem in enumerate(clickables):
-                if i > 50: break 
+                if i > 50: break # Sonsuz döngü koruması
                 try:
                     if elem.is_displayed():
                         driver.execute_script("arguments[0].click();", elem)
                         time.sleep(0.05)
                 except: continue
-            time.sleep(2) 
+            time.sleep(2) # Açılma animasyonu için bekle
 
         text = driver.execute_script("return arguments[0].innerText;", main_div)
         if not text or len(text) < 100:
@@ -135,7 +129,7 @@ def extract_content_smart(driver, is_kanun=False):
 
 # --- 5. ARKA PLAN TARAMA İŞLEMİ (ANA MOTOR) ---
 def arka_plan_tarama():
-    print(f"🚀 [Otopilot] Çoklu Kaynak Taraması Başlatıldı: {datetime.now()}")
+    print(f"🚀 [Otopilot] 10 Yıllık Tarama Başlatıldı: {datetime.now()}")
     options = get_chrome_options()
     
     veri_listesi = []
@@ -145,50 +139,28 @@ def arka_plan_tarama():
                 veri_listesi = json.load(f)
         except: pass
 
-    # --- GÖREV LİSTESİ (VERGİNET + KPMG) ---
+    # --- GÖREV LİSTESİ (10 YIL) ---
     gorevler = []
     
-    # 1. KPMG KAYNAKLARI (Güncel ve Önemli)
-    # KPMG'de sayfalama 'p' parametresi ile yapılır ve 1'den başlar.
-    kpmg_sources = [
-        ("KPMG Duyurular", "https://kpmgvergi.com/yayinlar/mali-bultenler?category=duyurular&categoryId=5"),
-        ("KPMG Vergi", "https://kpmgvergi.com/yayinlar/mali-bultenler?category=vergi&categoryId=1"),
-        ("KPMG Gümrük", "https://kpmgvergi.com/yayinlar/mali-bultenler?category=gumruk&categoryId=2"),
-        ("KPMG SGK", "https://kpmgvergi.com/yayinlar/mali-bultenler?category=sosyal-guvenlik&categoryId=3")
-    ]
-    
-    for etiket, url in kpmg_sources:
-        gorevler.append({
-            "base_url": url,
-            "etiket": etiket,
-            "paginated": True,
-            "param": "p",      # KPMG sayfa parametresi
-            "start_page": 1    # KPMG 1. sayfadan başlar
-        })
-
-    # 2. VERGİNET KAYNAKLARI (Son 2 Yıl - Hız İçin)
-    for yil in range(2025, 2023, -1):
+    # 2025'ten 2015'e kadar (Geriye doğru)
+    for yil in range(2025, 2014, -1):
+        # 1. Özelgeler
         gorevler.append({
             "base_url": f"https://www.verginet.net/dtt/Ozelgeler.aspx?Yil={yil}",
             "etiket": f"Özelge {yil}",
-            "paginated": True,
-            "param": "PageIndex", # Verginet sayfa parametresi
-            "start_page": 0       # Verginet 0. sayfadan başlar
+            "paginated": True
         })
+        # 2. Vergi Sirküleri
         gorevler.append({
             "base_url": f"https://www.verginet.net/sirkulerler.aspx?Yil={yil}&TipID=1",
             "etiket": f"Sirküler {yil}",
-            "paginated": True,
-            "param": "PageIndex",
-            "start_page": 0
+            "paginated": True
         })
-        
-    # 3. VERGİNET KANUNLARI (Tek Seferlik - Hiyerarşik olmayan)
-    gorevler.append({"base_url": "https://www.verginet.net/dtt/7/TemelVergiKanunlari_4.aspx", "etiket": "Temel Kanun", "paginated": False, "is_kanun": True})
 
     driver = None
     yeni_veri_sayisi = 0
-    MAX_SAYFA_DERINLIGI = 10 # Her kaynak için en fazla kaç sayfa gidilsin?
+    # Her yıl için kaç sayfa taranacağı (Otomatik durur ama güvenlik için limit koyduk)
+    MAX_SAYFA_DERINLIGI = 50 
     
     try:
         try:
@@ -197,37 +169,24 @@ def arka_plan_tarama():
             driver = webdriver.Chrome(options=options)
 
         for task in gorevler:
-            is_paginated = task.get("paginated")
-            param_name = task.get("param", "PageIndex")
-            start_page = task.get("start_page", 0)
-            
-            # Sayfa Döngüsü
-            sayfa_limiti = MAX_SAYFA_DERINLIGI if is_paginated else 1
-            
-            for i in range(sayfa_limiti):
-                page_num = start_page + i
+            # Sayfa Döngüsü (PageIndex=0, 1, 2...)
+            for page_num in range(MAX_SAYFA_DERINLIGI):
                 
-                # URL Oluştur
-                if is_paginated:
-                    sep = "&" if "?" in task["base_url"] else "?"
-                    current_url = f"{task['base_url']}{sep}{param_name}={page_num}"
-                    current_etiket = f"{task['etiket']} - S.{page_num}"
-                else:
-                    current_url = task["base_url"]
-                    current_etiket = task["etiket"]
+                # URL Oluşturma
+                sep = "&" if "?" in task["base_url"] else "?"
+                current_url = f"{task['base_url']}{sep}PageIndex={page_num}"
                 
-                print(f"📂 Taranıyor: {current_etiket}")
+                print(f"📂 Taranıyor: {task['etiket']} - Sayfa {page_num}")
                 
                 try:
                     driver.get(current_url)
                     time.sleep(3)
                     
-                    # Linkleri Bul
+                    # Linkleri Bul (HTML'deki DGSirkulerler tablosu)
                     detay_linkleri = []
                     try:
-                        # Verginet için özel, diğerleri için genel yapı
-                        xpath = "//*[contains(@id, 'DGSirkulerler')]" if "verginet" in current_url and is_paginated else "//*[contains(@id, 'pnlicerik')]"
-                        
+                        # Senin gönderdiğin HTML'deki tablo ID'si
+                        xpath = "//*[contains(@id, 'DGSirkulerler')]" 
                         try: container = driver.find_element(By.XPATH, xpath)
                         except: container = driver.find_element(By.TAG_NAME, "body")
                         
@@ -236,51 +195,30 @@ def arka_plan_tarama():
                             try:
                                 h = l.get_attribute("href")
                                 t = l.text.strip()
-                                
-                                if h and t and "javascript" not in h and h != current_url:
-                                    # URL Düzeltme (Relative to Absolute)
+                                # Link filtresi (Javascript ve boş olanları atla)
+                                if h and t and "/dtt/" in h and "javascript" not in h and h != current_url:
                                     full_url = urljoin(current_url, h)
-                                    
-                                    # Filtreler
-                                    if "verginet" in current_url:
-                                        if "/dtt/" in full_url: detay_linkleri.append((t, full_url))
-                                    elif "kpmg" in current_url:
-                                        # KPMG makale linkleri genellikle 'makale' veya 'yayin' içerir ve category parametresi taşımaz
-                                        if full_url != current_url and len(t) > 10:
-                                            detay_linkleri.append((t, full_url))
-                                    else:
-                                        detay_linkleri.append((t, full_url))
-                                        
+                                    detay_linkleri.append((t, full_url))
                             except: continue
                         
                         detay_linkleri = list(set(detay_linkleri))
                     except: pass
                     
-                    # Sayfa boşsa bitir
-                    if not detay_linkleri and is_paginated:
-                        print(f"⏹️ {task['etiket']} tamamlandı (Boş sayfa).")
+                    # Eğer bu sayfada hiç link yoksa, bu yıl bitmiş demektir. Sonraki yıla geç.
+                    if not detay_linkleri:
+                        print(f"⏹️ {task['etiket']} tamamlandı (Sayfa {page_num} boş).")
                         break 
                     
-                    # --- İÇERİĞE GİR VE ÇEK ---
+                    # İçeriğe Gir ve Çek
                     for baslik, url in detay_linkleri:
+                        # Mükerrer Kontrolü (Aynısı varsa atla)
                         if any(d['url'] == url for d in veri_listesi): continue
                         
                         try:
                             driver.get(url)
                             time.sleep(1.5)
                             
-                            # Verginet Kanun Modu: "Tüm Kanun" linkine git
-                            if task.get("is_kanun") and "verginet" in url:
-                                try:
-                                    tum_link = driver.find_element(By.PARTIAL_LINK_TEXT, "Tüm Kanun")
-                                    if tum_link:
-                                        yeni_url = tum_link.get_attribute('href')
-                                        driver.get(yeni_url)
-                                        time.sleep(2)
-                                        url = yeni_url
-                                except: pass
-
-                            icerik = extract_content_smart(driver, is_kanun=task.get("is_kanun", False))
+                            icerik = extract_content_smart(driver)
                             
                             if len(icerik) > 300:
                                 veri_listesi.append({
@@ -293,19 +231,21 @@ def arka_plan_tarama():
                                 })
                                 yeni_veri_sayisi += 1
                                 
+                                # Anlık Kayıt (Veri kaybı olmasın)
                                 if yeni_veri_sayisi % 5 == 0:
                                     with open(DATA_FILE, "w", encoding="utf-8") as f:
                                         json.dump(veri_listesi, f, ensure_ascii=False, indent=4)
-                                        print(f"💾 Kaydedildi: {yeni_veri_sayisi} veri...")
+                                        print(f"💾 {yeni_veri_sayisi}. veri kaydedildi...")
                         except: continue
                 except Exception as page_err:
                     print(f"⚠️ Sayfa hatası: {page_err}")
                     continue
                     
+        # Final Kayıt
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(veri_listesi, f, ensure_ascii=False, indent=4)
             
-        print(f"✅ [Otopilot] Tur tamamlandı. Toplam {yeni_veri_sayisi} yeni kayıt eklendi.")
+        print(f"✅ [Otopilot] Tur tamamlandı. Toplam {yeni_veri_sayisi} yeni veri eklendi.")
         
     except Exception as e:
         print(f"❌ [Otopilot] Kritik Hata: {e}")
@@ -313,30 +253,129 @@ def arka_plan_tarama():
         if driver: driver.quit()
 
 # --- 6. API UÇ NOKTALARI (ENDPOINTS) ---
-
 @app.get("/")
 def home():
     return {"durum": "aktif", "mesaj": "MüşavirGPT Otonom Sunucusu Çalışıyor 🚀"}
 
-@app.get("/status")
-def get_status():
+# --- YENİ PATRON PANELİ (DASHBOARD) ---
+@app.get("/dashboard", response_class=HTMLResponse)
+def get_dashboard():
+    """Tarayıcıdan girilebilen, şık ve canlı durum paneli."""
+    
+    # 1. Verileri Oku
     count = 0
-    last_mod = "Bilinmiyor"
+    last_mod = "Veri Yok"
+    son_baslik = "-"
+    son_5_veri = []
+    
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 count = len(data)
-            last_mod = time.ctime(os.path.getmtime(DATA_FILE))
+                if data:
+                    son_baslik = data[-1].get("baslik", "-")
+                    # Son 5 veriyi al (Tersine çevirip)
+                    son_5_veri = data[-5:][::-1]
+            
+            # Son güncelleme zamanı
+            mtime = os.path.getmtime(DATA_FILE)
+            last_mod = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
         except: pass
     
+    # 2. Zamanlayıcı Durumu
     next_run = "Bilinmiyor"
     try:
         jobs = scheduler.get_jobs()
-        if jobs: next_run = str(jobs[0].next_run_time)
+        if jobs:
+            next_run = str(jobs[0].next_run_time)
     except: pass
     
-    return {"toplam_belge": count, "son_dosya_guncellemesi": last_mod, "siradaki_tarama": next_run}
+    # 3. HTML Şablonu (Modern ve Şık Tasarım)
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>MüşavirGPT Kontrol Paneli</title>
+        <meta http-equiv="refresh" content="30"> <!-- 30 saniyede bir yenile -->
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; }}
+            .container {{ max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            h1 {{ color: #2c3e50; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+            .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }}
+            .card {{ background: #ecf0f1; padding: 20px; border-radius: 8px; text-align: center; }}
+            .card h3 {{ margin: 0; color: #7f8c8d; font-size: 14px; }}
+            .card p {{ margin: 10px 0 0; font-size: 24px; font-weight: bold; color: #2c3e50; }}
+            .live-indicator {{ color: #27ae60; font-weight: bold; animation: pulse 2s infinite; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 30px; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+            th {{ background-color: #3498db; color: white; }}
+            tr:hover {{ background-color: #f5f5f5; }}
+            @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.5; }} 100% {{ opacity: 1; }} }}
+            .btn-refresh {{ display: block; width: 100%; padding: 10px; background: #2c3e50; color: white; text-align: center; text-decoration: none; margin-top: 20px; border-radius: 5px; }}
+            .btn-refresh:hover {{ background: #34495e; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🕷️ MüşavirGPT <span style="font-size:0.6em; color:#7f8c8d;">Otopilot Paneli</span></h1>
+            <p style="text-align: center;">Sistem Durumu: <span class="live-indicator">● ÇALIŞIYOR</span></p>
+            
+            <div class="status-grid">
+                <div class="card">
+                    <h3>TOPLAM BELGE</h3>
+                    <p>{count}</p>
+                </div>
+                <div class="card">
+                    <h3>SON GÜNCELLEME</h3>
+                    <p style="font-size: 16px;">{last_mod}</p>
+                </div>
+                <div class="card">
+                    <h3>SIRADAKİ TARAMA</h3>
+                    <p style="font-size: 16px;">{next_run.split('+')[0]}</p>
+                </div>
+            </div>
+
+            <h2>📥 Son Eklenen Veriler</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Başlık</th>
+                        <th>Kategori</th>
+                        <th>İndirilme Tarihi</th>
+                    </tr>
+                </thead>
+                <tbody>
+    """
+    
+    # Tablo satırlarını ekle
+    for item in son_5_veri:
+        html_content += f"""
+        <tr>
+            <td><a href="{item.get('url', '#')}" target="_blank">{item.get('baslik', 'Bilinmiyor')}</a></td>
+            <td>{item.get('kategori', '-')}</td>
+            <td>{item.get('tarih', '-')}</td>
+        </tr>
+        """
+        
+    html_content += """
+                </tbody>
+            </table>
+            <br>
+            <div style="text-align:center; color: #7f8c8d; font-size: 12px;">
+                Bu sayfa her 30 saniyede bir otomatik yenilenir.
+            </div>
+            
+            <form action="/tetikle-tarama" method="post" style="text-align:center; margin-top:20px;">
+                <button type="submit" style="background:#e74c3c; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">
+                    🚨 Acil Tarama Başlat (Manuel)
+                </button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
 
 @app.post("/tetikle-tarama")
 def trigger_scrape(background_tasks: BackgroundTasks):
@@ -378,7 +417,7 @@ def ask_question(request: SoruIstegi):
     kaynak_isimleri = []
     for doc in en_iyi_belgeler:
         icerik_temiz = doc['icerik'].replace("\n", " ").strip()
-        context_text += f"\n--- KAYNAK: {doc['baslik']} ({doc['kategori']}) ---\n{icerik_temiz[:40000]}\n"
+        context_text += f"\n--- KAYNAK: {doc['baslik']} ---\n{icerik_temiz[:40000]}\n"
         kaynak_isimleri.append(doc['baslik'])
 
     prompt = f"""
