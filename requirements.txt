@@ -11,4 +11,5 @@ pandas
 google-generativeai
 selenium
 webdriver-manager
+apscheduler
 requests
