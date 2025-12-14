@@ -1,9 +1,14 @@
 streamlit
-google-genai
-requests
-pandas
+google-generativeai
 firebase-admin
+pymupdf
 selenium
 webdriver-manager
-pdfplumber # KRİTİK EKLENTİ
-PyMuPDF # fitz kütüphanesi için
+pandas
+fastapi
+uvicorn
+pandas
+google-generativeai
+selenium
+webdriver-manager
+requests

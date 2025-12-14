@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "musavir-gpt-app",
+  "private_key_id": "3e89d19e793b159d4f5de855aca0d7c15c6ae020",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDIANKrEO+2/qMR\nQD1N4bRpyp/F8R0J6AHQEios2eH1f4ht14ZkRvTvRHbEYlmQ3+uT9PnG4N3Nzk+g\n8nuS8Ms/xjEwOrEysnUHraZ6x/aQDDfJH16gXgOIqaR7hmt1sWav/DlG0awNdbQz\nwcGOL64FBg8g+pYbfSW2NFL6pTl1luRB/B2bNMLq/HVJarK2sVBO+SHq5ANUVPdC\nEEYD3SeuduIs/VwyNLCpTE/s0/IHRifO2wne4EcTyHdBwp15xjw/84g7ZuSnmUFk\nkGFpM3+73bKAP9CXX74HbEymLI5ZJzIHzJCvnxpPUcCpiZifY8bUiu4cfyeV6A+G\nRof1Y6wnAgMBAAECggEAAPaHKZglD1ZIwrgPIbqlX0tAsM0T9dPOYDTEaBvEdlBe\n41pI+nuEF7u5/cgUVlKvd7J3KIfDwodCADqccUQ84PYtHZEAHPnu/zYF8r3XS9wK\nT9WZf+3z9KAOQrEcxub2b50oLQAB5PXOyvur2SKG+GuqmomaWFBtgLlPxdxLIoh3\n7yMIhakEFkQFfGzcG/64GuU+5tZUdTNslM7ax9nIRnjY7WaD8hy4V1nOaazdMhWN\nwNBNzAaqZRFE+wZQm3ALrMgFZXSRttRcuiyAr1UujOHO48YDkbRnRjShecRoxPFa\nv7SyULm9VQsF/voxDn2iI1WGogOGtY8WgtdOfmPvAQKBgQD+vedS3Iun+gVSqK2+\n6Zjd5c8mb+z4MnG22PBtobvAv0OCtLTpDw8vXDaNlFW23kTnGgRJml4gwQmX2k/9\ntNAykGtKN6tJtpdmL1Jgma+/oK7Y3T/3yenM/V4YZf6wZYsRxaBh/OOArGS01ZyD\ngGovl1RtyoCeFvmuht7JJdS6cQKBgQDI/bUoplYzUjrDE6hTvRlyiwr1SJGTcgdN\n7HdvbZKES1C0isNkNKJu2tjV4EqBPdm5BEv6xZNLrYT2miM8/te/0ghHReyYLyR4\nKLTVUOJ+QGQJwDFqss0f9ZSXn6Q8w7wbEk6ZWlmpC+wF4MEQ9jZgXqhJKr59zG/D\nq1yRFbOsFwKBgQCgOMk58MVWDYcziixdm4cuadB0mIkvQmsLWj8+dS8l+CZ6GzZ+\nL56ZZyJYwid3MS2dPVvc/16cs01ZWVJefE9Gvlb9Ay6U2mc3OiRR5dgIawQOGnqV\nW0XWTLXWGrCqOfPSZb6OYwSkdcmRg5lBjI89B61usKNcy46XGvUdBtJZwQKBgQC+\n3tjUQqpn0HZHXXqkE1eARHTinMjKqiYvpRmDMx5KDjAVVBXcKnP7LE9xRK/cbn09\ny8vP2SNZYe58NcKzIRyIaJA+BzR5DYPnrFiWn1qIJOQbsm37ctODvzceipdwsT0I\nxGjqDzhIZi79IgSW9AqNmDbeTP5b/vJAcpLUoTRgfwKBgQDDeGHN36dkem1yBQcO\n1o/Q7SZJf0McioOuMOzEIJPtdtZEBUTFXObSQ0KYkYsYNoyvzR6P5aKx/I9YGY6v\nSen9l0PBCjtn8vMNA7R64Vk0Bkb2oy7vQ3kpEJHrqzzpt2JXA/yACalQLfuHzrO4\ngf28ovYaSfLMXP+zG+DEtmVUHw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@musavir-gpt-app.iam.gserviceaccount.com",
+  "client_id": "115679715281381311495",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40musavir-gpt-app.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
