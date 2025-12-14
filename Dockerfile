@@ -1,24 +1,23 @@
-# 1. Temel Sistem: Python 3.9'lu hafif bir Linux
-FROM python:3.9-slim
+# Python 3.9 Tam Sürüm (Slim yerine tam sürüm hata riskini azaltır)
+FROM python:3.9
 
-# 2. Gerekli Araçları ve Google Chrome'u Yükle
-# (Sunucuda tarayıcı olmadığı için bunu elle kuruyoruz)
-RUN apt-get update && apt-get install -y wget gnupg2 unzip \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable
+# Sistemi güncelle, gerekli araçları ve Google Chrome'u .deb paketiyle kur
+# Bu yöntem repo eklemekten daha kararlıdır ve 'exit code 127' hatasını çözer.
+RUN apt-get update && apt-get install -y wget gnupg2 unzip curl \
+    && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 3. Çalışma Klasörünü Ayarla
+# Çalışma klasörünü ayarla
 WORKDIR /app
 
-# 4. Kütüphane Listesini Kopyala ve Yükle
+# Kütüphane listesini kopyala ve yükle
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Tüm Proje Dosyalarını Sunucuya Kopyala
+# Tüm proje dosyalarını kopyala
 COPY . .
 
-# 6. Uygulamayı Başlat
-# Sunucu açıldığında bu komutu çalıştıracak
+# Uygulamayı başlat
 CMD ["python", "fastapi_backend.py"]
