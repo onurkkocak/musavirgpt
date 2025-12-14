@@ -1,5 +1,5 @@
-# Python 3.9 Tam Sürüm (Slim yerine tam sürüm hata riskini azaltır)
-FROM python:3.9
+# Python 3.11 Sürümü (Daha güncel ve 'importlib' hatalarını çözer)
+FROM python:3.11
 
 # Sistemi güncelle, gerekli araçları ve Google Chrome'u .deb paketiyle kur
 # Bu yöntem repo eklemekten daha kararlıdır ve 'exit code 127' hatasını çözer.
