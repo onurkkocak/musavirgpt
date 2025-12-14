@@ -245,7 +245,7 @@ def arka_plan_tarama():
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(veri_listesi, f, ensure_ascii=False, indent=4)
             
-        print(f"✅ [Otopilot] Tur tamamlandı. Toplam {yeni_veri_sayisi} yeni veri eklendi.")
+        print(f"✅ [Otopilot] Tur tamamlandı. Toplam {yeni_veri_sayisi} yeni kayıt eklendi.")
         
     except Exception as e:
         print(f"❌ [Otopilot] Kritik Hata: {e}")
@@ -253,9 +253,33 @@ def arka_plan_tarama():
         if driver: driver.quit()
 
 # --- 6. API UÇ NOKTALARI (ENDPOINTS) ---
+
 @app.get("/")
 def home():
     return {"durum": "aktif", "mesaj": "MüşavirGPT Otonom Sunucusu Çalışıyor 🚀"}
+
+@app.get("/status")
+def get_status():
+    """Veri durumunu JSON olarak döndürür."""
+    count = 0
+    last_mod = "Bilinmiyor"
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                count = len(data)
+            last_mod = time.ctime(os.path.getmtime(DATA_FILE))
+        except: pass
+    
+    # Zamanlayıcı durumunu kontrol etmek için
+    next_run = "Bilinmiyor"
+    try:
+        jobs = scheduler.get_jobs()
+        if jobs:
+            next_run = str(jobs[0].next_run_time)
+    except: pass
+    
+    return {"toplam_belge": count, "son_guncelleme": last_mod, "siradaki_tarama": next_run}
 
 # --- YENİ PATRON PANELİ (DASHBOARD) ---
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -265,7 +289,6 @@ def get_dashboard():
     # 1. Verileri Oku
     count = 0
     last_mod = "Veri Yok"
-    son_baslik = "-"
     son_5_veri = []
     
     if os.path.exists(DATA_FILE):
@@ -274,7 +297,6 @@ def get_dashboard():
                 data = json.load(f)
                 count = len(data)
                 if data:
-                    son_baslik = data[-1].get("baslik", "-")
                     # Son 5 veriyi al (Tersine çevirip)
                     son_5_veri = data[-5:][::-1]
             
@@ -298,6 +320,7 @@ def get_dashboard():
     <head>
         <title>MüşavirGPT Kontrol Paneli</title>
         <meta http-equiv="refresh" content="30"> <!-- 30 saniyede bir yenile -->
+        <meta charset="UTF-8">
         <style>
             body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; }}
             .container {{ max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
@@ -379,13 +402,23 @@ def get_dashboard():
 
 @app.post("/tetikle-tarama")
 def trigger_scrape(background_tasks: BackgroundTasks):
+    """
+    Bu adrese istek atıldığında, sunucu arka planda taramaya başlar.
+    Mobil uygulama beklemez, hemen 'Başlatıldı' cevabı alır.
+    """
     background_tasks.add_task(arka_plan_tarama)
-    return {"mesaj": "Manuel tarama başlatıldı."}
+    return {"mesaj": "Tarama işlemi arka planda başlatıldı."}
 
 @app.post("/sor", response_model=CevapYaniti)
 def ask_question(request: SoruIstegi):
-    if not GOOGLE_API_KEY: print("UYARI: API Anahtarı eksik.")
+    """
+    Mobil uygulamadan gelen soruyu alır, veritabanını tarar ve cevap döner.
+    """
+    if not GOOGLE_API_KEY:
+        # Geliştirme ortamı için opsiyonel uyarı, production'da zorunlu olmalı
+        print("UYARI: API Anahtarı eksik, cevap üretilemeyebilir.")
 
+    # 1. Veriyi Yükle
     context_data = []
     if os.path.exists(DATA_FILE):
         try:
@@ -394,8 +427,9 @@ def ask_question(request: SoruIstegi):
         except: pass
     
     if not context_data:
-        return CevapYaniti(cevap="Veri tabanım henüz oluşuyor...", kaynaklar=[])
+        return CevapYaniti(cevap="Henüz veri tabanım boş. Lütfen yöneticiye başvurun.", kaynaklar=[])
 
+    # 2. Arama Algoritması (Basitleştirilmiş Vektörsüz Arama)
     soru_kelimeleri = request.soru.lower().split()
     bulunanlar = []
     
@@ -408,14 +442,16 @@ def ask_question(request: SoruIstegi):
         if puan > 0: bulunanlar.append((puan, item))
     
     bulunanlar.sort(key=lambda x: x[0], reverse=True)
-    en_iyi_belgeler = [b[1] for b in bulunanlar[:2]] 
+    en_iyi_belgeler = [b[1] for b in bulunanlar[:2]] # En iyi 2 belge
 
     if not en_iyi_belgeler:
-        return CevapYaniti(cevap="İlgili bilgi bulunamadı.", kaynaklar=[])
+        return CevapYaniti(cevap="Veri setimde bu konuyla ilgili bilgi bulamadım.", kaynaklar=[])
 
+    # 3. Prompt Hazırlama
     context_text = ""
     kaynak_isimleri = []
     for doc in en_iyi_belgeler:
+        # Metin temizliği
         icerik_temiz = doc['icerik'].replace("\n", " ").strip()
         context_text += f"\n--- KAYNAK: {doc['baslik']} ---\n{icerik_temiz[:40000]}\n"
         kaynak_isimleri.append(doc['baslik'])
@@ -427,15 +463,18 @@ def ask_question(request: SoruIstegi):
     TALİMAT: Soruyu sadece kaynaklara dayanarak cevapla.
     """
 
+    # 4. Yapay Zeka Çağrısı
     try:
         active_model = get_best_model() or 'models/gemini-1.5-pro'
         model = genai.GenerativeModel(active_model)
         response = model.generate_content(prompt)
         return CevapYaniti(cevap=response.text, kaynaklar=kaynak_isimleri)
     except Exception as e:
-        return CevapYaniti(cevap=f"Hata: {str(e)}", kaynaklar=[])
+        # Hata durumunda (Kota vs) kullanıcıya bilgi dön
+        return CevapYaniti(cevap=f"Hata oluştu: {str(e)}", kaynaklar=[])
 
 if __name__ == "__main__":
     import uvicorn
+    # Sunucu portunu ortam değişkeninden al, yoksa 8000
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
